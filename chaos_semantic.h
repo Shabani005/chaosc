@@ -1,7 +1,9 @@
 #import "./chaos_parser.h"
 #include <cassert>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -203,3 +205,91 @@ typedef struct Chaos_Symbol {
       : kind(k), name(n), type(t), return_type(*Chaos_Type::make_void()),
         scope_depth(0) {}
 } Chaos_Symbol;
+
+enum IR_Type_Kind {
+  IR_I8,
+  IR_I16,
+  IR_I32,
+  IR_I64,
+  IR_U8,
+  IR_U16,
+  IR_U32,
+  IR_U64,
+  IR_F32,
+  IR_F64,
+  IR_BOOL,
+  IR_PTR,
+  IR_VOID
+};
+
+struct IR_Type {
+  IR_Type_Kind kind;
+};
+
+enum IR_Op {
+  IR_NOP,
+
+  IR_CONST_INT,
+  IR_CONST_FLOAT,
+
+  IR_LOAD,
+  IR_STORE,
+  IR_ADD,
+  IR_SUB,
+  IR_MUL,
+  IR_DIV,
+
+  IR_CMP_EQ,
+  IR_CMP_LT,
+  IR_CMP_GT,
+
+  IR_NEG,
+
+  IR_JMP,
+  IR_JMP_IF_FALSE,
+  IR_LABEL,
+
+  IR_CALL,
+  IR_RET
+};
+
+using IR_Value = int;
+
+struct IR_Inst {
+  IR_Op op;
+  IR_Type type;
+
+  IR_Value dst;
+  IR_Value a;
+  IR_Value b;
+
+  std::string name;
+  std::vector<IR_Value> args;
+  
+  int64_t int_value;
+  double float_value;
+};
+
+struct IR_Local {
+  std::string name;
+  IR_Type type;
+};
+
+struct IR_Function {
+  std::string name;
+
+  std::vector<IR_Local> params;
+  std::vector<IR_Local> locals;
+
+  IR_Type return_type;
+
+  std::vector<IR_Inst> code;
+
+  int next_temp = 0;
+
+  IR_Value new_temp() { return next_temp++; }
+};
+
+struct IR_Program {
+  std::vector<IR_Function> functions;
+};

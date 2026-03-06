@@ -1,6 +1,7 @@
 #import "./chaos_lexer.h"
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string_view>
 #include <vector>
 
@@ -26,10 +27,12 @@ typedef enum {
   AST_PROGRAM
 } Chaos_AST_Kind;
 
+struct Chaos_Type;
+
 typedef struct Chaos_AST {
   Chaos_AST_Kind kind;
 
-  std::string_view resolved_type;
+  std::shared_ptr<Chaos_Type> resolved_type;
 
   std::string_view literal;
 
@@ -67,6 +70,11 @@ typedef struct Chaos_AST {
     std::string_view return_type;
     Chaos_AST *body;
   } function;
+
+  struct {
+    Chaos_AST *caller;
+    std::vector<Chaos_AST *> args;
+  } call;
 
   struct {
     std::string_view name;
@@ -190,6 +198,30 @@ Chaos_AST *parse_var_decl(Chaos_Parser *p) {
   return node;
 }
 
+Chaos_AST *parse_postfix(Chaos_Parser *p, Chaos_AST *left) {
+  while (p->peek()->kind == TOK_LPAREN) {
+    p->advance();
+    Chaos_AST *call_node = new Chaos_AST();
+    call_node->kind = AST_CALL;
+    call_node->call.caller = left;
+
+    if (p->peek()->kind != TOK_RPAREN) {
+      call_node->call.args.push_back(parse_expression(p));
+      while (p->match(TOK_COMMA)) {
+        call_node->call.args.push_back(parse_expression(p));
+      }
+    }
+
+    if (!p->match(TOK_RPAREN)) {
+      std::fprintf(stderr, "Expected ')' after function arguments\n");
+    }
+
+    left = call_node;
+  }
+
+  return left;
+}
+
 Chaos_AST *parse_factor(Chaos_Parser *p) {
   if (p->peek()->kind == TOK_MINUS) {
     Chaos_Token *tok = p->advance();
@@ -199,7 +231,8 @@ Chaos_AST *parse_factor(Chaos_Parser *p) {
     node->unary.expr = parse_factor(p);
     return node;
   }
-  return parse_primary(p);
+  Chaos_AST *primary = parse_primary(p);
+  return parse_postfix(p, primary);
 }
 
 Chaos_AST *parse_term(Chaos_Parser *p) {
