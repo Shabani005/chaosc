@@ -250,6 +250,7 @@ enum IR_Op {
   IR_LABEL,
 
   IR_CALL,
+  IR_INTRINSIC_PRINT,
   IR_RET
 };
 

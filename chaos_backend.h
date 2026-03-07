@@ -1,4 +1,5 @@
 #import "./chaos_semantic.h"
+#include <iostream>
 
 struct Lowering_Context {
   IR_Function *fn;
@@ -56,7 +57,7 @@ IR_Type lower_type_name(std::string_view name) {
     return {IR_I32};
   if (name == "i64")
     return {IR_I64};
-  if (name == "f32")
+  if (name == "f32" || name == "float")
     return {IR_F32};
   if (name == "f64")
     return {IR_F64};
@@ -65,6 +66,7 @@ IR_Type lower_type_name(std::string_view name) {
   if (name == "void")
     return {IR_VOID};
 
+  std::cout << name << std::endl;
   assert(false && "Unknown type name");
   return {IR_I32};
 }
@@ -94,13 +96,29 @@ IR_Value lower_expr(Chaos_AST *node, Lowering_Context &ctx) {
     } else {
       return ctx.fn->new_temp();
     }
+    IR_Inst inst{};
+    inst.args = arg_values;
+
+    if (fn_name == "print") {
+      inst.op = IR_INTRINSIC_PRINT;
+      inst.type = {IR_VOID};
+      ctx.fn->code.push_back(inst);
+
+      IR_Value t = ctx.fn->new_temp();
+      IR_Inst zero{};
+      zero.op = IR_CONST_INT;
+      zero.dst = t;
+      zero.int_value = 0;
+      zero.type = {IR_I32};
+      ctx.fn->code.push_back(zero);
+      return t;
+    }
 
     IR_Value t = ctx.fn->new_temp();
-    IR_Inst inst{};
     inst.op = IR_CALL;
     inst.dst = t;
     inst.name = fn_name;
-    inst.args = arg_values;
+
     inst.type = node->resolved_type ? lower_type(*node->resolved_type)
                                     : IR_Type{IR_I32};
     ctx.fn->code.push_back(inst);
