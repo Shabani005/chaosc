@@ -101,8 +101,8 @@ IR_Value lower_expr(Chaos_AST *node, Lowering_Context &ctx) {
     IR_Inst inst{};
     inst.op = IR_CONST_FLOAT;
     inst.dst = t;
-    inst.int_value = std::stod(std::string(node->literal));
-    inst.type = {IR_I32};
+    inst.float_value = std::stod(std::string(node->literal));
+    inst.type = {IR_F64};
     ctx.fn->code.push_back(inst);
 
     return t;
