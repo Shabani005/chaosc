@@ -7,12 +7,13 @@ fn main(): int {
   add(5, 3);
 
   var o: int = 3;
+  var t: int = 1;
   
   while (o < 10){
     o = o + 1;
     print(o);
   }
-  print(add(1, 7));
+  print(add(1, 7), t);
   return 0;
 }
 

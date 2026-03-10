@@ -173,6 +173,7 @@ private:
       std::string fmt;
       for (auto t : inst.arg_types) {
         fmt += printf_fmt(t);
+        fmt += ' ';
       }
       fmt += "\\n";
 
