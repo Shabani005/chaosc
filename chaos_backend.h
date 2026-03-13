@@ -7,7 +7,7 @@
 struct Lowering_Context {
   IR_Function *fn;
   std::unordered_map<std::string, IR_Type> value_types;
-
+  static std::unordered_map<std::string, IR_Type> named_types;
   int label_counter = 0;
 
   std::string new_label() { return "L" + std::to_string(label_counter++); }
@@ -37,6 +37,12 @@ IR_Type lower_type(const Chaos_Type &t) {
   if (t.kind == Chaos_Type::TYPE_VOID)
     return {IR_VOID};
 
+  if (t.kind == Chaos_Type::TYPE_ENUM)
+    return {IR_I32};
+
+  if (t.kind == Chaos_Type::TYPE_STRUCT)
+    return {IR_PTR};
+
   assert(false && "Unsupported type?");
   return {IR_VOID};
 }
@@ -56,6 +62,31 @@ IR_Type get_expr_type(Chaos_AST *node) {
       return {IR_STR};
   }
   return {IR_I32};
+}
+
+size_t struct_field_offset(const Struct_Data &s, const std::string &name) {
+  size_t offset = 0;
+
+  for (auto &f : s.fields) {
+    if (f.name == name)
+      return offset;
+
+    offset += f.type->size_bytes();
+  }
+
+  assert(false && "Unknown struct field");
+  return 0;
+}
+
+std::shared_ptr<Chaos_Type> struct_field_type(const Struct_Data &s,
+                                              std::string_view field) {
+  for (auto &f : s.fields) {
+    if (f.name == field)
+      return f.type;
+  }
+
+  assert(false && "Unknown struct field");
+  return nullptr;
 }
 
 IR_Type promote_numeric_type(IR_Type a, IR_Type b) {
@@ -82,6 +113,10 @@ IR_Type lower_type_name(std::string_view name) {
   if (name == "string")
     return {IR_STR};
 
+  auto it = Lowering_Context::named_types.find(std::string(name));
+  if (it != Lowering_Context::named_types.end())
+    return it->second;
+
   std::cout << name << std::endl;
   assert(false && "Unknown type name");
   return {IR_I32};
@@ -100,8 +135,49 @@ IR_Value lower_expr(Chaos_AST *node, Lowering_Context &ctx) {
 
     return t;
   }
-  if (node->kind == AST_STRING){
-        IR_Value t = ctx.fn->new_temp({IR_STR});
+  if (node->kind == AST_MEMBER) {
+    IR_Value base = lower_expr(node->member.object, ctx);
+
+    auto &struct_data = node->member.object->resolved_type->structure();
+
+    size_t offset =
+        struct_field_offset(struct_data, std::string(node->member.field));
+
+    IR_Value off = ctx.fn->new_temp({IR_I32});
+
+    IR_Inst c{};
+    c.op = IR_CONST_INT;
+    c.dst = off;
+    c.int_value = offset;
+    c.type = {IR_I32};
+    ctx.fn->code.push_back(c);
+
+    IR_Value addr = ctx.fn->new_temp({IR_PTR});
+
+    IR_Inst add{};
+    add.op = IR_ADD;
+    add.dst = addr;
+    add.a = base;
+    add.b = off;
+    add.type = {IR_PTR};
+    ctx.fn->code.push_back(add);
+
+    IR_Type field_type = get_expr_type(node);
+
+    IR_Value result = ctx.fn->new_temp(field_type);
+
+    IR_Inst load{};
+    load.op = IR_LOAD;
+    load.dst = result;
+    load.a = addr;
+    load.type = field_type;
+
+    ctx.fn->code.push_back(load);
+
+    return result;
+  }
+  if (node->kind == AST_STRING) {
+    IR_Value t = ctx.fn->new_temp({IR_STR});
 
     IR_Inst inst{};
     inst.op = IR_CONST_STRING;
@@ -235,6 +311,7 @@ IR_Value lower_expr(Chaos_AST *node, Lowering_Context &ctx) {
     ctx.fn->code.push_back(inst);
     return t;
   }
+  assert(false && "lower_expr: unhandled AST node kind");
   return 0;
 }
 
@@ -249,6 +326,48 @@ void lower_stmt(Chaos_AST *node, Lowering_Context &ctx) {
     ctx.fn->code.push_back(inst);
   }
   if (node->kind == AST_ASIGN) {
+
+    if (node->assign.target->kind == AST_MEMBER) {
+      Chaos_AST *mem = node->assign.target;
+      IR_Value base = lower_expr(mem->member.object, ctx);
+
+      assert(mem->member.object->resolved_type &&
+             mem->member.object->resolved_type->kind ==
+                 Chaos_Type::TYPE_STRUCT &&
+             "member assignment requires struct type");
+
+      const Struct_Data &s = mem->member.object->resolved_type->structure();
+
+      size_t offset = struct_field_offset(s, std::string(mem->member.field));
+
+      IR_Value off = ctx.fn->new_temp({IR_I32});
+      IR_Inst c{};
+      c.op = IR_CONST_INT;
+      c.dst = off;
+      c.int_value = (int64_t)offset;
+      c.type = {IR_I32};
+      ctx.fn->code.push_back(c);
+
+      IR_Value addr = ctx.fn->new_temp({IR_PTR});
+      IR_Inst add{};
+      add.op = IR_ADD;
+      add.dst = addr;
+      add.a = base;
+      add.b = off;
+      add.type = {IR_PTR};
+      ctx.fn->code.push_back(add);
+
+      IR_Value value = lower_expr(node->assign.value, ctx);
+
+      IR_Inst store{};
+      store.op = IR_STORE;
+      store.a = addr;
+      store.b = value;
+      ctx.fn->code.push_back(store);
+
+      return;
+    }
+
     IR_Value value = lower_expr(node->assign.value, ctx);
 
     IR_Inst inst{};
@@ -364,10 +483,25 @@ IR_Function lower_function(Chaos_AST *fn_node) {
   return fn;
 }
 
+std::unordered_map<std::string, IR_Type> Lowering_Context::named_types;
+
 IR_Program lower_program(Chaos_AST *program) {
   IR_Program ir;
 
   for (auto *stmt : program->block.statements) {
+
+    if (stmt->kind == AST_STRUCT) {
+      Lowering_Context::named_types[std::string(stmt->struct_decl.name)] = {
+          IR_PTR};
+      continue;
+    }
+
+    if (stmt->kind == AST_ENUM) {
+      Lowering_Context::named_types[std::string(stmt->enum_decl.name)] = {
+          IR_I32};
+      continue;
+    }
+
     if (stmt->kind == AST_FUNCTION) {
       ir.functions.push_back(lower_function(stmt));
     }
