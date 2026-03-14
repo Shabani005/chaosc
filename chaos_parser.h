@@ -75,6 +75,7 @@ typedef struct Chaos_AST {
   struct {
     std::string_view name;
     std::vector<std::pair<std::string_view, std::string_view>> params;
+    std::string_view owner; // owner struct for methods
     std::string_view return_type;
     Chaos_AST *body;
   } function;
@@ -109,7 +110,11 @@ typedef struct Chaos_AST {
       : kind(AST_PROGRAM), literal(), ident(),
         binary{TOK_INT, nullptr, nullptr}, unary{TOK_INT, nullptr}, block(),
         if_stmt{nullptr, nullptr, nullptr}, while_stmt{nullptr, nullptr},
-        function{std::string_view{}, {}, std::string_view{}, nullptr},
+        function{std::string_view{},
+                 {},
+                 std::string_view{},
+                 std::string_view{},
+                 nullptr},
         call{nullptr, {}},
         var_decl{std::string_view{}, std::string_view{}, nullptr},
         assign{nullptr, nullptr}, enum_decl{std::string_view{}, {}},
@@ -552,6 +557,19 @@ Chaos_AST *parse_function(Chaos_Parser *p) {
     return nullptr;
   }
   Chaos_Token *name_tok = p->advance();
+
+  std::string_view owner_name;
+  std::string_view fn_name = name_tok->text;
+
+  if (p->match(TOK_DOT)) {
+    owner_name = name_tok->text;
+    if (p->peek()->kind != TOK_IDENT) {
+      std::fprintf(stderr, "Expected method name after '.'\n");
+      return nullptr;
+    }
+    fn_name = p->advance()->text;
+  }
+
   if (!p->match(TOK_LPAREN)) {
     std::fprintf(stderr, "Expected: '('\n");
     return nullptr;
@@ -608,7 +626,8 @@ Chaos_AST *parse_function(Chaos_Parser *p) {
 
   Chaos_AST *node = new Chaos_AST();
   node->kind = AST_FUNCTION;
-  node->function.name = name_tok->text;
+  node->function.owner = owner_name;
+  node->function.name = fn_name;
   node->function.params = std::move(params);
   node->function.return_type = return_type;
   node->function.body = body;

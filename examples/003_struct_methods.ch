@@ -4,21 +4,26 @@ struct Vec3 = {
   z: float
 }
 
-fn length_sq(v: Vec3): float {
+fn Vec3.length(self: Vec3): float {
+  var v: Vec3 = self;
   var r: float = v.x * v.x + v.y * v.y + v.z * v.z;
   return r;
 }
 
+fn Vec3.print(self: Vec3): void {
+  print("Printing Vec3");
+  print(self.x, self.y, self.z);
+}
+
+
 fn main(): int {
   var v: Vec3;
-  
+
   v.x = 1.0;
   v.y = 2.0;
   v.z = 3.0;
 
-  print(v.x, v.y, v.z);
-
-  var l: float = length_sq(v);
+  var l: float = v.length();
   print(l);
 
   var i: int = 0;

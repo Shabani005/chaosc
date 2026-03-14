@@ -342,6 +342,7 @@ struct IR_Inst {
 struct IR_Local {
   std::string name;
   IR_Type type;
+  size_t stack_bytes = 0;
 };
 
 struct IR_Function {
