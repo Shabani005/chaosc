@@ -47,6 +47,9 @@ IR_Type lower_type(const Chaos_Type &t) {
   if (t.kind == Chaos_Type::TYPE_STRUCT)
     return {IR_PTR};
 
+  if (t.kind == Chaos_Type::TYPE_STRING)
+    return {IR_STR};
+
   assert(false && "Unsupported type?");
   return {IR_VOID};
 }
@@ -581,6 +584,8 @@ IR_Program lower_program(Chaos_AST *program) {
           f.type = Chaos_Type::make_primitive(PRIM_F64);
         } else if (field.second == "bool") {
           f.type = Chaos_Type::make_primitive(PRIM_BOOL);
+        } else if (field.second == "string") {
+          f.type = Chaos_Type::make_string();
         } else {
           assert(false && "Unsupported struct field type");
         }

@@ -64,6 +64,7 @@ typedef struct Chaos_Type {
     TYPE_POINTER,
     TYPE_STRUCT,
     TYPE_ENUM,
+    TYPE_STRING,
     TYPE_VOID
   } kind;
 
@@ -73,6 +74,12 @@ typedef struct Chaos_Type {
     auto t = std::make_shared<Chaos_Type>();
     t->kind = TYPE_VOID;
     t->data = Void_Data{};
+    return t;
+  }
+
+  static std::shared_ptr<Chaos_Type> make_string() {
+    auto t = std::make_shared<Chaos_Type>();
+    t->kind = TYPE_STRING;
     return t;
   }
 
@@ -233,6 +240,9 @@ typedef struct Chaos_Type {
 
     case TYPE_ARRAY:
       return array().size * array().element->size_bytes();
+
+    case TYPE_STRING:
+      return sizeof(size_t) + sizeof(const char *);
 
     case TYPE_STRUCT: {
       size_t size = 0;
