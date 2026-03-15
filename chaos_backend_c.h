@@ -1,6 +1,7 @@
 #pragma once
 
 #import "./chaos_backend.h"
+#include "chaos_semantic.h"
 #include <sstream>
 #include <unordered_map>
 
@@ -81,6 +82,9 @@ static std::string lower_type_c(IR_Type type) {
     break;
   case IR_I16:
     return "int16_t";
+    break;
+  case IR_STR:
+    return "ChaosString";
     break;
   default:
     assert(false && "Unknown type name");
