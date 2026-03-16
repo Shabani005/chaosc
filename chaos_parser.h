@@ -26,6 +26,8 @@ typedef enum {
   AST_IDENT,
   AST_ASIGN,
   AST_MEMBER,
+  AST_IMPORT,
+  AST_MOD_DECL,
 
   AST_PROGRAM
 } Chaos_AST_Kind;
@@ -106,6 +108,14 @@ typedef struct Chaos_AST {
     std::vector<std::string_view> items;
   } enum_decl;
 
+  struct {
+    std::string_view name;
+  } import_decl;
+
+  struct {
+    std::string_view name;
+  } mod_decl;
+
   Chaos_AST()
       : kind(AST_PROGRAM), literal(), ident(),
         binary{TOK_INT, nullptr, nullptr}, unary{TOK_INT, nullptr}, block(),
@@ -118,7 +128,9 @@ typedef struct Chaos_AST {
         call{nullptr, {}},
         var_decl{std::string_view{}, std::string_view{}, nullptr},
         assign{nullptr, nullptr}, enum_decl{std::string_view{}, {}},
-        struct_decl{std::string_view{}, {}}, member{nullptr, std::string_view{}}
+        struct_decl{std::string_view{}, {}},
+        member{nullptr, std::string_view{}}, import_decl{std::string_view{}},
+        mod_decl{std::string_view{}}
 
   {}
 } Chaos_AST;
@@ -127,8 +139,10 @@ typedef struct Chaos_Parser {
   Chaos_Tokens *tokens;
   size_t pos;
 
+  std::string_view current_module;
+
   Chaos_Parser(Chaos_Tokens *tokens = NULL, size_t pos = 0)
-      : tokens(tokens), pos(pos) {}
+      : tokens(tokens), pos(pos), current_module(std::string_view{}) {}
 
   Chaos_Token *peek() { return &tokens->items[pos]; }
 
@@ -558,7 +572,7 @@ Chaos_AST *parse_function(Chaos_Parser *p) {
   }
   Chaos_Token *name_tok = p->advance();
 
-  std::string_view owner_name;
+  std::string_view owner_name = p->current_module;
   std::string_view fn_name = name_tok->text;
 
   if (p->match(TOK_DOT)) {
@@ -635,6 +649,54 @@ Chaos_AST *parse_function(Chaos_Parser *p) {
   return node;
 }
 
+Chaos_AST *parse_import(Chaos_Parser *p) {
+  if (!p->match(TOK_IMPORT))
+    return nullptr;
+
+  if (p->peek()->kind != TOK_IDENT && p->peek()->kind != TOK_STRING) {
+    std::fprintf(stderr, "Expected module name or path string after import\n");
+    return nullptr;
+  }
+
+  std::string_view name = p->advance()->text;
+
+  if (!p->match(TOK_SEMI)) {
+    std::fprintf(stderr, "Expected ';' after import\n");
+    return nullptr;
+  }
+
+  Chaos_AST *node = new Chaos_AST();
+  node->kind = AST_IMPORT;
+  node->import_decl.name = name;
+
+  return node;
+}
+
+Chaos_AST *parse_mod_decl(Chaos_Parser *p) {
+  if (!p->match(TOK_MOD))
+    return nullptr;
+
+  if (p->peek()->kind != TOK_IDENT) {
+    std::fprintf(stderr, "Expected module name after mod\n");
+    return nullptr;
+  }
+
+  std::string_view name = p->advance()->text;
+
+  if (!p->match(TOK_SEMI)) {
+    std::fprintf(stderr, "Expected ';' after mod\n");
+    return nullptr;
+  }
+
+  p->current_module = name;
+
+  Chaos_AST *node = new Chaos_AST();
+  node->kind = AST_MOD_DECL;
+  node->mod_decl.name = name;
+
+  return node;
+}
+
 Chaos_AST *parse_enum(Chaos_Parser *p) {
   if (!p->match(TOK_ENUM))
     return nullptr;
@@ -697,11 +759,16 @@ Chaos_AST *parse_statement(Chaos_Parser *p) {
     return parse_struct(p);
   if (p->peek()->kind == TOK_ENUM)
     return parse_enum(p);
+  if (p->peek()->kind == TOK_IMPORT)
+    return parse_import(p);
+  if (p->peek()->kind == TOK_MOD)
+    return parse_mod_decl(p);
 
   Chaos_AST *expr = parse_expression(p);
 
   if (!p->match(TOK_SEMI)) {
     std::fprintf(stderr, "Expected ';' after expression\n");
+    return nullptr;
   }
 
   return expr;

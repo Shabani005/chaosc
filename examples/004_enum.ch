@@ -4,7 +4,9 @@ enum Color = {
   Blue
 }
 
-fn print_color(c: Color): void {
+fn Color.print(self: Color): void {
+  var c: Color = self;
+  
   if (c == 0) {
     print("Red");
   } else {
@@ -20,11 +22,11 @@ fn main(): int {
 
   print("Setting to Green!");
   var c: Color = 1;
-  print_color(c);
+  c.print();
 
   print("Setting to Blue!");
   c = 2;
-  print_color(c);
+  c.print();
 
   return 0;
 }

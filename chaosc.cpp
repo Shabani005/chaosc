@@ -1,11 +1,15 @@
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <unistd.h>
+#include <unordered_set>
+#include <vector>
 
 #define CHAOS_LEXER_IMPLEMENTATION
 #include "./chaos_backend_c.h"
@@ -33,8 +37,84 @@ static bool write_file(const std::string &path, const std::string &contents) {
   return out.good();
 }
 
-static bool c_to_exe(const std::string &c_source,
-                                    const std::string &exe_path) {
+static std::string trim(std::string s) {
+  size_t start = s.find_first_not_of(" \t\r\n");
+  if (start == std::string::npos)
+    return "";
+  size_t end = s.find_last_not_of(" \t\r\n");
+  return s.substr(start, end - start + 1);
+}
+
+static std::vector<std::string> parse_imports(const std::string &source) {
+  std::vector<std::string> imports;
+  std::istringstream in(source);
+  std::string line;
+
+  while (std::getline(in, line)) {
+    std::string t = trim(line);
+    if (t.rfind("import ", 0) != 0)
+      continue;
+
+    t = trim(t.substr(7));
+    if (!t.empty() && t.back() == ';')
+      t.pop_back();
+    t = trim(t);
+
+    if (t.size() >= 2 && t.front() == '"' && t.back() == '"')
+      t = t.substr(1, t.size() - 2);
+
+    if (!t.empty())
+      imports.push_back(t);
+  }
+
+  return imports;
+}
+
+static bool
+resolve_import_order_recursive(const std::filesystem::path &path,
+                               std::unordered_set<std::string> &seen,
+                               std::vector<std::filesystem::path> &ordered) {
+  std::error_code ec;
+  auto canonical = std::filesystem::weakly_canonical(path, ec);
+  if (ec) {
+    std::cerr << "failed to resolve path: " << path << "\n";
+    return false;
+  }
+
+  std::string key = canonical.string();
+  if (seen.find(key) != seen.end())
+    return true;
+
+  std::string source;
+  try {
+    source = read_file(key);
+  } catch (const std::exception &) {
+    std::cerr << "failed to read module: " << key << "\n";
+    return false;
+  }
+
+  for (const auto &module : parse_imports(source)) {
+    std::filesystem::path module_path = module;
+    if (module_path.extension() != ".ch")
+      module_path += ".ch";
+
+    std::filesystem::path child = canonical.parent_path() / module_path;
+    if (!resolve_import_order_recursive(child, seen, ordered))
+      return false;
+  }
+
+  seen.insert(key);
+  ordered.push_back(canonical);
+  return true;
+}
+
+static bool resolve_import_order(const std::string &entry_path,
+                                 std::vector<std::filesystem::path> &ordered) {
+  std::unordered_set<std::string> seen;
+  return resolve_import_order_recursive(entry_path, seen, ordered);
+}
+
+static bool c_to_exe(const std::string &c_source, const std::string &exe_path) {
   char temp_path[] = "/tmp/chaoscXXXXXX";
   int fd = mkstemp(temp_path);
   if (fd == -1) {
@@ -76,26 +156,34 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  std::string source;
-  try {
-    source = read_file(argv[1]);
-  } catch (const std::exception &e) {
-    std::cerr << e.what() << "\n";
+  std::vector<std::filesystem::path> files;
+  if (!resolve_import_order(argv[1], files))
     return 1;
+
+  Chaos_AST *program = new Chaos_AST();
+  program->kind = AST_PROGRAM;
+
+  std::deque<std::string> source_store;
+  std::deque<Chaos_Lexer> lexers;
+
+  for (const auto &file : files) {
+    source_store.push_back(read_file(file.string()));
+
+    lexers.push_back(Chaos_Lexer{0});
+    chaos_lexer_run(&lexers.back(), source_store.back());
+
+    Chaos_Parser parser(&lexers.back().tokens);
+    Chaos_AST *ast = parse_program(&parser);
+    if (!ast) {
+      std::fprintf(stderr, "Failed to parse\n");
+      return 1;
+    }
+
+    for (Chaos_AST *stmt : ast->block.statements)
+      program->block.statements.push_back(stmt);
   }
 
-  Chaos_Lexer lexer = {0};
-  chaos_lexer_run(&lexer, source);
-
-  Chaos_Parser parser(&lexer.tokens);
-  Chaos_AST *ast = parse_program(&parser);
-
-  if (!ast) {
-    std::fprintf(stderr, "Failed to parse\n");
-    return 1;
-  }
-
-  IR_Program ir = lower_program(ast);
+  IR_Program ir = lower_program(program);
   std::string backend = argv[3];
   std::string out;
 
@@ -122,19 +210,4 @@ int main(int argc, char **argv) {
     }
     return 0;
   }
-
-  if (backend == "exe") {
-    CBackend c_backend;
-    c_backend.codegen(ir);
-    out = c_backend.get_output() + "\n";
-
-    if (!c_to_exe(out, argv[2])) {
-      std::cerr << "compilation failed\n";
-      return 1;
-    }
-    return 0;
-  }
-
-  std::cerr << "unknown backend: " << backend << "\n";
-  return 1;
 }
