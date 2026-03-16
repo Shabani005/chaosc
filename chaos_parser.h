@@ -1,4 +1,5 @@
 #import "./chaos_lexer.h"
+#include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -769,6 +770,7 @@ Chaos_AST *parse_statement(Chaos_Parser *p) {
   if (!p->match(TOK_SEMI)) {
     std::fprintf(stderr, "Expected ';' after expression\n");
     return nullptr;
+    assert(0);
   }
 
   return expr;
