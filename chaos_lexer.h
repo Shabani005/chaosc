@@ -58,6 +58,7 @@ typedef enum {
   TOK_ENUM,
   TOK_TYPE,
   TOK_CONST,
+  TOK_MOD,
 
   TOK_UNKNOWN
 
@@ -179,6 +180,8 @@ CHAOSDEF void chaos_lexer_run(Chaos_Lexer *lx, std::string_view src) {
         chaos_lexer_emit(lx, src, TOK_ENUM, start, lx->pos, line, column);
       } else if (text == "type") {
         chaos_lexer_emit(lx, src, TOK_TYPE, start, lx->pos, line, column);
+      } else if (text == "mod") {
+        chaos_lexer_emit(lx, src, TOK_MOD, start, lx->pos, line, column);
       } else {
         chaos_lexer_emit(lx, src, TOK_IDENT, start, lx->pos, line, column);
       }

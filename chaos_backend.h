@@ -3,14 +3,17 @@
 #include <cstddef>
 #include <iostream>
 #include <unordered_map>
+#include <unordered_set>
 
 struct Lowering_Context {
   IR_Function *fn;
   std::unordered_map<std::string, IR_Type> value_types;
   static std::unordered_map<std::string, Struct_Data> named_structs;
   std::unordered_map<std::string, std::string> value_struct_types;
+  std::unordered_map<std::string, std::string> value_enum_types;
   static std::unordered_map<std::string, IR_Type> named_types;
   static std::unordered_map<std::string, IR_Type> named_function_returns;
+  static std::unordered_set<std::string> module_names;
 
   int label_counter = 0;
 
@@ -163,6 +166,15 @@ std::string struct_type_name_for_expr(Chaos_AST *expr, Lowering_Context &ctx) {
   return "";
 }
 
+std::string enum_type_name_for_expr(Chaos_AST *expr, Lowering_Context &ctx) {
+  if (expr->kind == AST_IDENT) {
+    auto it = ctx.value_enum_types.find(std::string(expr->ident));
+    if (it != ctx.value_enum_types.end())
+      return it->second;
+  }
+  return "";
+}
+
 IR_Value lower_expr(Chaos_AST *node, Lowering_Context &ctx) {
   if (node->kind == AST_INT) {
     IR_Value t = ctx.fn->new_temp({IR_I32});
@@ -254,13 +266,30 @@ IR_Value lower_expr(Chaos_AST *node, Lowering_Context &ctx) {
       }
     } else if (node->call.caller->kind == AST_MEMBER) {
       Chaos_AST *member = node->call.caller;
-      std::string owner = struct_type_name_for_expr(member->member.object, ctx);
-      assert(!owner.empty() && "method receiver must be a struct");
-      fn_name = owner + "." + std::string(member->member.field);
 
-      arg_values.push_back(lower_expr(member->member.object, ctx));
-      for (Chaos_AST *arg : node->call.args) {
-        arg_values.push_back(lower_expr(arg, ctx));
+      if (member->member.object->kind == AST_IDENT &&
+          Lowering_Context::module_names.find(
+              std::string(member->member.object->ident)) !=
+              Lowering_Context::module_names.end()) {
+        fn_name = std::string(member->member.object->ident) + "." +
+                  std::string(member->member.field);
+
+        for (Chaos_AST *arg : node->call.args) {
+          arg_values.push_back(lower_expr(arg, ctx));
+        }
+      } else {
+        std::string owner =
+            struct_type_name_for_expr(member->member.object, ctx);
+        if (owner.empty())
+          owner = enum_type_name_for_expr(member->member.object, ctx);
+
+        assert(!owner.empty() && "method receiver must be a struct or enum");
+        fn_name = owner + "." + std::string(member->member.field);
+
+        arg_values.push_back(lower_expr(member->member.object, ctx));
+        for (Chaos_AST *arg : node->call.args) {
+          arg_values.push_back(lower_expr(arg, ctx));
+        }
       }
     } else {
       return ctx.fn->new_temp({IR_I32});
@@ -494,6 +523,12 @@ void lower_stmt(Chaos_AST *node, Lowering_Context &ctx) {
     if (struct_it != Lowering_Context::named_structs.end()) {
       ctx.value_struct_types[local.name] = std::string(node->var_decl.type);
       local.stack_bytes = struct_type_size_bytes(struct_it->second);
+    } else if (Lowering_Context::named_types.find(
+                   std::string(node->var_decl.type)) !=
+                   Lowering_Context::named_types.end() &&
+               Lowering_Context::named_types[std::string(node->var_decl.type)]
+                       .kind == IR_I32) {
+      ctx.value_enum_types[local.name] = std::string(node->var_decl.type);
     }
 
     ctx.fn->locals.push_back(local);
@@ -515,6 +550,9 @@ void lower_stmt(Chaos_AST *node, Lowering_Context &ctx) {
     }
     return;
   }
+
+  if (node->kind == AST_IMPORT || node->kind == AST_MOD_DECL)
+    return;
   if (node->kind == AST_CALL || node->kind == AST_BINARY ||
       node->kind == AST_UNARY || node->kind == AST_IDENT) {
 
@@ -551,6 +589,12 @@ IR_Function lower_function(Chaos_AST *fn_node) {
         Lowering_Context::named_structs.end()) {
       ctx.value_struct_types[std::string(param.first)] =
           std::string(param.second);
+    } else if (Lowering_Context::named_types.find(std::string(param.second)) !=
+                   Lowering_Context::named_types.end() &&
+               Lowering_Context::named_types[std::string(param.second)].kind ==
+                   IR_I32) {
+      ctx.value_enum_types[std::string(param.first)] =
+          std::string(param.second);
     }
   }
 
@@ -562,11 +606,20 @@ std::unordered_map<std::string, IR_Type> Lowering_Context::named_types;
 std::unordered_map<std::string, Struct_Data> Lowering_Context::named_structs;
 std::unordered_map<std::string, IR_Type>
     Lowering_Context::named_function_returns;
+std::unordered_set<std::string> Lowering_Context::module_names;
 
 IR_Program lower_program(Chaos_AST *program) {
   IR_Program ir;
 
+  Lowering_Context::module_names.clear();
+
   for (auto *stmt : program->block.statements) {
+
+    if (stmt->kind == AST_MOD_DECL) {
+      Lowering_Context::module_names.insert(std::string(stmt->mod_decl.name));
+      continue;
+    }
+
     if (stmt->kind == AST_STRUCT) {
       Struct_Data s;
       s.name = std::string(stmt->struct_decl.name);
