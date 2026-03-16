@@ -60,6 +60,9 @@ static std::vector<std::string> parse_imports(const std::string &source) {
       t.pop_back();
     t = trim(t);
 
+    if (t.size() >= 2 && t.front() == '"' && t.back() == '"')
+      t = t.substr(1, t.size() - 2);
+
     if (!t.empty())
       imports.push_back(t);
   }
@@ -91,7 +94,11 @@ resolve_import_order_recursive(const std::filesystem::path &path,
   }
 
   for (const auto &module : parse_imports(source)) {
-    std::filesystem::path child = canonical.parent_path() / (module + ".ch");
+    std::filesystem::path module_path = module;
+    if (module_path.extension() != ".ch")
+      module_path += ".ch";
+
+    std::filesystem::path child = canonical.parent_path() / module_path;
     if (!resolve_import_order_recursive(child, seen, ordered))
       return false;
   }

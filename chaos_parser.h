@@ -653,8 +653,8 @@ Chaos_AST *parse_import(Chaos_Parser *p) {
   if (!p->match(TOK_IMPORT))
     return nullptr;
 
-  if (p->peek()->kind != TOK_IDENT) {
-    std::fprintf(stderr, "Expected module name after import\n");
+  if (p->peek()->kind != TOK_IDENT && p->peek()->kind != TOK_STRING) {
+    std::fprintf(stderr, "Expected module name or path string after import\n");
     return nullptr;
   }
 
