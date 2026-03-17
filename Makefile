@@ -11,7 +11,7 @@ OUTPUTS := $(patsubst examples/%.ch,build/%,$(EXAMPLES))
 all: $(CHAOSC)
 
 $(CHAOSC): $(SRC)
-	$(CXX) -o $@ $< $(CXXFLAGS) $(LDFLAGS)
+	$(CXX) -o $@ $(SRC)
 
 examples: $(CHAOSC) build $(OUTPUTS)
 
