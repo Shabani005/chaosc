@@ -210,4 +210,19 @@ int main(int argc, char **argv) {
     }
     return 0;
   }
+
+  if (backend == "exe") {
+    CBackend c_backend;
+    c_backend.codegen(ir);
+    out = c_backend.get_output() + "\n";
+
+    if (!c_to_exe(out, argv[2])) {
+      std::cerr << "failed to build executable\n";
+      return 1;
+    }
+    return 0;
+  }
+
+  std::fprintf(stderr, "Unknown backend: %s\n", argv[3]);
+  return 1;
 }
